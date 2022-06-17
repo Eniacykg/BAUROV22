@@ -1,0 +1,11 @@
+<launch>
+
+    
+    <include file="$(find zed_wrapper)/launch/zed.launch"/>
+    <include file="$(find depthimage_to_laserscan)/launch/launchfile_sample.launch"/>
+      <node pkg="tf" type="static_transform_publisher" name="zed_to_base_link" args="0.1 0 1 0 0 0 1 odom base_link 100" />
+    <!--
+    <include file="$(find hector_slam_launch)/launch/tutorial.launch"/>
+    -->	
+    <include file="$(find zed_wrapper)/launch/odom_localization.launch"/>
+</launch>
