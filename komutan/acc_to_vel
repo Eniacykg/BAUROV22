@@ -1,0 +1,25 @@
+Acceleration to velocity:
+
+import time 
+import enumm
+
+a = (msg['xacc']) # xacc mi a olarak define ettim istersem başka yere de beslerim kendime de beslerim np
+b = (msg['yacc']) # yacc mi b olarak define ettim istersem başka yere de beslerim kendime de beslerim np
+
+bu arada vx vy enumm.py da initial velocityler olarak def ediliyorlar ve 0 olarak başlıyorlar 
+
+örnek:
+enumm.xacc= a
+enumm.yacc= b
+
+bitti 
+
+ok
+
+şimdi 
+
+acceleration to velocity:
+formül:
+
+hesap = enumm.vx + ( (a/100) * time.time() )  (100 katsayı boşverin anlarsınız zaten verilerden 9.81 değil 981 gelir g which is zacc)
+print (hesap)

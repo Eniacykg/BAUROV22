@@ -1,0 +1,373 @@
+import enum
+import time
+import threading
+from pymavlink import mavutil
+import numpy as np
+import cv2
+
+import control
+import enumm
+import test2
+
+
+
+
+
+
+def hareketkontrol():
+    for i in range (5):
+        if(enumm.vx>10 or enumm.vy>10 or enumm.vz>10 ):
+            enumm.hareketcontrolcount=True
+        else:
+            enumm.hareketcontrolcount=False
+
+#--------------------Kronometre--------------------------------------------------------------------
+def zamanlayici_calistir(saniye):  #Kronometremiz bu aslında :D çok iyi ya ellerinize saglık ENİS+Komutanım
+	enumm.zaman_kontrolcusu=0
+	time.sleep(int(saniye))
+	enumm.zaman_kontrolcusu=1
+
+
+#--------------------Kronometreye bağlı hareket--------------------------------------------------------------------------------------
+def zaman_git(saniye,target):    #İstenen zaman dilimi boyunca istenen hareketi yapmanı sağlıyor süüper
+	zamanlayici_calistir(saniye)
+	while(enumm.zaman_kontrolcusu ==0): #zaman dolmamışken :D efsane bir fonksiyon bu yaa bayıldım
+		roll,pitch,yaw = enumm.imu_roll,enumm.imu_pitch,enumm.imu_yaw
+		vx,vy,vz,altitude,valid = enumm.vx,enumm.vy,enumm.vz,enumm.altitude,enumm.valid
+		delta_yaw = yaw-target
+		if(altitude>0.75):
+			z_pwm = 850 
+		elif(altitude<0.55):
+			z_pwm = 150 
+		else :
+			z_pwm = 500
+		if yaw>180:
+			yaw = yaw-360
+		elif(int(yaw) ==0):
+			yaw = 1
+		control.hareket(500,0,int(z_pwm),int(300*(-delta_yaw/abs(delta_yaw))))
+
+
+#--------------------İstenen Derece Miktarınca Dönmeni sağlar-------------Ama irtifanı kontrol etmez sadece dönmeni kontrol eder------------------------------------------------------
+def yaw_donme(target): #INANILMAZ KRITIK YAW 
+	yaw_sifir_count = 0
+	while(True):
+		yaw = enumm.imu_yaw
+		delta_yaw = yaw-target
+		if delta_yaw>180:
+			delta_yaw = delta_yaw-360
+		control.hareket(0,0,500,int(300*(-delta_yaw/(0.01+abs(delta_yaw)))))
+		if delta_yaw>180:
+			delta_yaw = delta_yaw-360
+		print(delta_yaw)
+		time.sleep(0.1)
+		if(delta_yaw<5 and delta_yaw>-5):
+			yaw_sifir_count=yaw_sifir_count+1
+		else:
+			yaw_sifir_count=0
+		if(yaw_sifir_count==3):
+			break
+
+
+#--------------------Yüzeyden ayrılmayı veya yüzeye inmeni sağlarlar----------------------enumm.target_yaw = enumm.imu_yaw
+def yuzeyden_ayril():
+	enumm.target_yaw = enumm.imu_yaw
+	for i in range(40):
+		control.hareket(0,0,0,0)
+		time.sleep(0.1)
+def yuzeye_in():
+	enumm.target_yaw = enumm.imu_yaw
+	for i in range(35):
+		control.hareket(0,0,1000,0)
+		time.sleep(0.1)
+
+
+#--------------------------------------------------Hem yawu sıfırlar aynı anda da altitude kontrolu yapar
+def yaw_sifirlama(target_yaw):
+	roll,pitch,yaw = enumm.imu_roll,enumm.imu_pitch,enumm.imu_yaw
+	vx,vy,vz,altitude,valid = enumm.vx,enumm.vy,enumm.vz,enumm.altitude,enumm.valid
+	#altitude = control.get_vfr_data()
+	yaw_sifir_count = 0
+	if yaw>180:
+		yaw = yaw-360
+	while(True):
+		vx,vy,vz,altitude,valid = enumm.vx,enumm.vy,enumm.vz,enumm.altitude,enumm.valid
+		#altitude = control.get_vfr_data()
+		if(altitude>0.75):
+			z_pwm = 750
+		elif(altitude<0.55):
+			z_pwm = 250
+		else :
+			z_pwm = 500		
+		control.hareket(0,0,500,int(300*(-(yaw-target_yaw)/abs(yaw-target_yaw))))
+		roll,pitch,yaw = enumm.imu_roll,enumm.imu_pitch,enumm.imu_yaw
+		if yaw>180:
+			yaw = yaw-360
+		print(yaw,altitude,valid)
+		time.sleep(0.1)
+		if(yaw<5 and yaw>-5):
+			yaw_sifir_count=yaw_sifir_count+1
+		else:
+			yaw_sifir_count=0
+		if(yaw_sifir_count==3):
+			break
+
+	print("yaw sifirlandi")
+
+
+#-----------------------------------
+def target_yaw(angle_final,rotate2):
+	if (angle_final <0):
+	    angle_final = 360 + angle_final
+
+    heading_final = angle_final-rotate2-180
+    target_yaw = enumm.imu_yaw-heading_final
+	print("imu yaw: ",enumm.imu_yaw,"heading_final: ", heading_final)
+
+	if (target_yaw > 180):
+	    target_yaw = target_yaw-360
+	elif (target_yaw < -180):
+	    target_yaw = target_yaw+360
+	return target_yaw
+
+
+
+#-------------------------İstenen süre boyunca istenen miktardaki ileri geri eksendeki hareketi kontrol eder
+def time_forward(zaman, yaw_direction, throttlex):
+    #zamanlayici_calistir(saniye)
+    #while(enumm.zaman_kontrolcusu ==0):
+	vx,vy,vz,altitude,valid = enumm.vx,enumm.vy,enumm.vz,enumm.altitude,enumm.valid
+	#altitude = control.get_vfr_data()
+	roll,pitch,yaw = enumm.imu_roll,enumm.imu_pitch,enumm.imu_yaw
+	if yaw>180:
+		yaw = yaw-360
+	elif(int(yaw) ==0):
+		yaw = 1
+
+        #---------------------TİC-TOC yerine kronometre kullanmayı düşünüyorum
+	
+	#tic = time.time()
+	#toc = 0
+	while(toc < zaman):	
+	
+		if(altitude>0.75):
+			z_pwm = 850
+		elif(altitude<0.55):
+			z_pwm = 150
+		else :
+			z_pwm = 500
+
+		delta_yaw = yaw-yaw_direction
+		if delta_yaw>180:
+			delta_yaw = delta_yaw-360
+
+		control.hareket(throttlex,0,500,int(300*(-delta_yaw/(abs(delta_yaw)+0.01)))) #orjinalde throttlex yok 400 var
+
+		roll,pitch,yaw = enumm.imu_roll,enumm.imu_pitch,enumm.imu_yaw
+		if yaw>180:
+			yaw = yaw-360
+		elif(int(yaw) ==0):
+			yaw = 1
+
+
+		toc =time.time()-tic
+
+
+#-----------------------------------------------Yengeç misali yanal haraketleri istenen süre boyunca kontrol etmeyi sağlar
+def time_lateral(zaman,yaw_direction, throttley):
+	vx,vy,vz,altitude,valid = enumm.vx,enumm.vy,enumm.vz,enumm.altitude,enumm.valid
+	#altitude = control.get_vfr_data()
+	roll,pitch,yaw = enumm.imu_roll,enumm.imu_pitch,enumm.imu_yaw
+	if yaw>180:
+		yaw = yaw-360
+	elif(int(yaw) ==0):
+		yaw = 1
+	
+	tic = time.time()
+	toc = 0
+	while(toc < zaman):	
+	
+		if(altitude>0.75):
+			z_pwm = 850
+		elif(altitude<0.55):
+			z_pwm = 150
+		else :
+			z_pwm = 500
+
+		delta_yaw = yaw-yaw_direction
+		if delta_yaw>180:
+			delta_yaw = delta_yaw-360
+
+		control.hareket(100,throttley,500,int(300*(-delta_yaw/(abs(delta_yaw)+0.01)))) #orjinalde throttley yok 0 var orada, 
+                                                                            #100ün sebebi: sırtı duvara süreki dayamaka ve stabilize etmek 
+
+		roll,pitch,yaw = enumm.imu_roll,enumm.imu_pitch,enumm.imu_yaw
+		if yaw>180:
+			yaw = yaw-360
+		elif(int(yaw) ==0):
+			yaw = 1
+
+
+		toc =time.time()-tic
+
+
+#stabilize olmadığı için bunları sona ekleriz
+def bitis_forward():
+	control.hareket(200,0,500,0)
+	time.sleep(30)
+
+def bitis_backward():
+	control.hareket(-200,0,500,0)
+	time.sleep(30)
+		
+def bitis_lateral():
+	control.hareket(0,200,500,0)
+	time.sleep(30)
+
+def bitis_lateral():
+	control.hareket(0,-200,500,0)
+	time.sleep(30)  
+
+
+#--------------BURADAN SONRASI ALGORİTMAMIZA BAGLI OLARAK YAZDIĞIM CUSTOM MOVEMENT BLOKLARI OLACAK:----------------------------
+#--------------Ama yine de aslında buraya kadar olan hareket fonksiyonlarını kullanarak yapacağız------------------------------
+
+
+def motortesti():
+    zamanlayici_calistir(saniye)
+    while(enumm.zaman_kontrolcusu ==0):
+        control.hareket(0, 0, 500, 0)
+
+def xvel():
+    global x_yaslanmis
+    xvel_sifir_count = 0
+    while (true):
+        if(int(vx)<20 and enumm.hareketcontrolcount == True):  
+            xvel_sifir_count =+ 1
+        else:                                        
+            xvel_sifir_count = 0
+        if(xacc_sifir_count==20): # burada ifin içindeyiz ya o bir sıkıntı olabilir bir bakın 
+            x_yaslanmis += 1  # +1 olacak bu == x_yaslanmis +1    
+            break
+#Bu iki (def:yvel ve xvel) fonksiyonda duvara carpıp carpmadıgımızı anlıyoruz sonra carptıysak bisey carpmadıysak bir sey yapıyoruz
+
+def yvel():  
+    global y_yaslanmis
+    yvel_sifir_count = 0
+    while (true):
+        if(int(yvel)<20 and enumm.hareketcontrolcount ==True):
+            yvel_sifir_count =+ 1
+        else:              #<-------------------------------------Buna gerek yok aslında ya ??
+            yacc_sifir_count = 0
+        if(yvel_sifir_count==20):
+            y_yaslanmis = 1
+            break
+
+xacc_thread = threading.Thread(target=xaccel, name='xaccel calistir' ) 
+yacc_thread = threading.Thread(target=yaccel, name='yaccel calistir' ) 
+
+def sirtduvarda ():
+    roll,pitch,yaw = enumm.imu_roll,enumm.imu_pitch,enumm.imu_yaw
+    global sirtim_duvara_geldi
+	#vx,vy,vz,altitude,valid = enumm.vx,enumm.vy,enumm.vz,enumm.altitude,enumm.valid 
+   
+    xacc_thread.start()
+    time_forward(2,0, -20) #ilk önce geri gitmeyi deniyoruz (2 saniyeyi, 0 yaw_directionı, -20 deltaxı)
+    
+    if (x_yaslanmis==1): #geri gittim abi duvar vardı, durdum #eşittir değil büyüktür yap onu
+        sirtim_duvara_geldi = sirtim_duvara_geldi + 1  
+        print("yaslandi")
+       
+        
+
+
+    else: #geri gittim abi duvar yoktu
+        time_forward(4,0, 20) #sonrasında ileri gitmeyi deniyoruz (4 saniyeyi, 0 yaw_directionı, -20 deltaxı)
+        if (x_yaslanmis==1): #ileri gittim abi duvar vardı
+            #180 derece terse döneceğim
+            yaw_donme(180) # 180 döndürüyoruz ki sırtım duvara dönsün   
+            sirtim_duvara_geldi = sirtim_duvara_geldi + 1
+            print(sirtim_duvara_geldi)
+            
+        else: #ileri gittim duvar yoktu sağa sola gideceğim (ilk sola)
+            yacc_thread.start() #burada neden başlattın ki hani en başta bir kere başlatıyorduk
+            time_lateral(2, 0, -20) #sağa gidiyorum
+            if (y_yaslanmis == 1):
+                yaw_donme(90) # -90 döndürüyoruz ki sırtım duvara dönsün   
+                sirtim_duvara_geldi = sirtim_duvara_geldi + 1
+                print(sirtim_duvara_geldi)
+            else: #solda yoktu sağa gidiyorum
+                time_lateral(4, 0, 20) #sola gidiyorum
+                if (y_yaslanmis==1):
+                    yaw_donme(-90) # 90 döndürüyoruz ki sırtım duvara dönsün   
+                    sirtim_duvara_geldi = sirtim_duvara_geldi + 1
+                    print(sirtim_duvara_geldi)
+                else:
+                    sirtduvarda()
+
+
+def yengec ():   #------------------------Yengeçte durup durup 30 derece dönme işini yapmayacağız gerek yok fov yüksek zaten
+    roll,pitch,yaw = enumm.imu_roll,enumm.imu_pitch,enumm.imu_yaw
+	#vx,vy,vz,altitude,valid = enumm.vx,enumm.vy,enumm.vz,enumm.altitude,enumm.valid 
+    
+    time_lateral(0,0,-20) #sola gitmek
+
+
+def spin():
+    yaw_donme(180)
+
+
+
+
+
+def fil ():     #bunun içine şimdi ara ara periodik olarak 360 derece döneceğiz ya da başka bir yerde vererek döneceğiz
+    
+    forward(0,0,0,20) #ileri gitmek
+    if (y_yaslanmis = 0 and x_yaslanmis = 1): #zigzag yaparken ileri hareketini yaptığımız kısımda duvara çarptım
+        if(x_yaslanmis >=2 ):
+            yaw_donme(180)
+            forward(0,0,0,20)
+            lateral(0,0,-20) #sola gitmek
+
+    elif(y_yaslanmis = 1 and x_yaslanmis = 0): #zigzag yaparken sağa hareketini yaptığımız kısımda duvara çarptım
+        if(x_yaslanmis >=2 ):
+            yaw_donme(-90)
+            forward(0,0,0,20)
+            lateral(0,0,20) #sağa gitmek
+
+    lateral(0,0,20) #sağa gitmek
+    yaw_donme(360)
+
+    #buradan aşağısında pinpon olayına başlıyoruz tersi yönünde sekeceğiz 
+
+    
+
+    #loopa alacağız bunları kendi ekseninde dönmeyi ekleyerek bir loop halledeceğiz
+
+
+def filzigzag ():   #bu iş stabilizenin devre dışı kalışıyla sakata girdi dikkat
+    forward(0,0,0,20) #ileri gitmek
+    lateral(0,0,20) #sağa gitmek
+
+    forward(0,0,0,20) #ileri gitmek
+    lateral(0,0,-20) #sağa gitmek
+
+
+def hedefe_git():
+    if (r < 100): # hedef yakinimizdaysa 
+        control.hareket(250, 0, 500, 0)    #eğer ki sıkıntı olmuyorsa yukarıdan time_forward/time_lateral'ler kullnılabilir bir dene -ykg
+        print("Duz giderek -----> Cemberden geciliyor...") # düz git 
+        #BURADA HSV EKLEYECEĞİZ ONU DA ETHERNET VEYA DOME TUTUCU İLE TEST EDECEĞİZ UNUTMA YKG
+    
+    elif (x > 360 and x < 390 and y > 240 and y < 270 ):  # hedef ortadaysa
+        control.hareket(250, 0, 500, 0)
+        print("Duz giderek -----> Cemberden geciliyor...")
+    
+    elif (x < 360): # hedef robotun solunda kalıyorsa
+        control.hareket(0, -250, 500, 0)  # sola lateral komutun kontrol edilmesi lazım
+        print("Sola Lateral giderek -----> Cember araniyor...")
+    
+    elif (x > 390): # hedef robotun saginda kaliyorsa
+        control.hareket(0, 250, 500, 0) # sağa lateral komutun kontrol edilmesi lazım
+        print("Saga Lateral giderek -----> Cember araniyor")
+
